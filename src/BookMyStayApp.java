@@ -2,119 +2,95 @@ import java.util.*;
 
 /**
  * Project: Book My Stay
- * Use Case 9: Error Handling & Validation
- * Goal: Use Custom Exceptions and "Fail-Fast" validation to protect system state.
- * * @author YourName
- * @version 1.0
+ * Use Case 10: Booking Cancellation & Inventory Rollback
+ * Goal: Use a Stack (LIFO) to manage state reversal and restore inventory.
+ * * @version 1.0
  */
 
 // --- CUSTOM EXCEPTION ---
-class InvalidBookingException extends Exception {
-    public InvalidBookingException(String message) {
-        super(message);
-    }
+class InvalidOperationException extends Exception {
+    public InvalidOperationException(String message) { super(message); }
 }
 
-// --- ENTITIES (Room, Service, Request, Record) ---
-
-class AddOnService {
-    private String name;
-    private double price;
-    public AddOnService(String name, double price) { this.name = name; this.price = price; }
-    public double getPrice() { return price; }
-    @Override
-    public String toString() { return name + " ($" + price + ")"; }
-}
+// --- ENTITIES ---
 
 class Room {
     private int roomNumber;
-    private String category;
     private boolean isAvailable;
-    public Room(int roomNumber, String category) { this.roomNumber = roomNumber; this.category = category; this.isAvailable = true; }
+    public Room(int roomNumber) { this.roomNumber = roomNumber; this.isAvailable = true; }
     public int getRoomNumber() { return roomNumber; }
     public boolean isAvailable() { return isAvailable; }
     public void setAvailable(boolean available) { isAvailable = available; }
+    @Override
+    public String toString() { return "Room " + roomNumber + " [Available: " + isAvailable + "]"; }
 }
 
 class ConfirmedBooking {
     private String guestName;
     private int roomNumber;
-    private double totalBill;
-    public ConfirmedBooking(String guestName, int roomNumber, double totalBill) {
-        this.guestName = guestName; this.roomNumber = roomNumber; this.totalBill = totalBill;
-    }
-    @Override
-    public String toString() { return String.format("[Archive] %s stayed in Room %d (Paid: $%.2f)", guestName, roomNumber, totalBill); }
-}
-
-class ReservationRequest {
-    private String guestName;
-    private int requestedRoomNumber;
-    public ReservationRequest(String guestName, int requestedRoomNumber) { this.guestName = guestName; this.requestedRoomNumber = requestedRoomNumber; }
+    public ConfirmedBooking(String guestName, int roomNumber) { this.guestName = guestName; this.roomNumber = roomNumber; }
     public String getGuestName() { return guestName; }
-    public int getRequestedRoomNumber() { return requestedRoomNumber; }
+    public int getRoomNumber() { return roomNumber; }
 }
-
-// --- MAIN APPLICATION ---
 
 public class BookMyStayApp {
 
     public static void main(String[] args) {
-        System.out.println("=== BOOK MY STAY: STABLE VERSION (UC 9) ===\n");
+        System.out.println("=== BOOK MY STAY: FULL LIFECYCLE (UC 10) ===\n");
 
-        // 1. Setup Data
-        List<Room> inventory = new ArrayList<>();
-        inventory.add(new Room(101, "Standard"));
-        inventory.add(new Room(102, "Deluxe"));
+        // 1. Setup Environment
+        List<Room> inventory = new ArrayList<>(Arrays.asList(new Room(101), new Room(102)));
+        Map<String, ConfirmedBooking> activeBookings = new HashMap<>();
+        Stack<Integer> rollbackStack = new Stack<>(); // The LIFO Rollback Structure
 
-        Queue<ReservationRequest> bookingQueue = new LinkedList<>();
-        bookingQueue.add(new ReservationRequest("Alice", 101));
-        bookingQueue.add(new ReservationRequest("Bob", 999)); // INVALID ROOM NUMBER!
-        bookingQueue.add(new ReservationRequest("Charlie", 102));
+        // 2. Simulate a Booking (Alice takes Room 101)
+        System.out.println("--- Action: Booking ---");
+        activeBookings.put("Alice", new ConfirmedBooking("Alice", 101));
+        inventory.get(0).setAvailable(false);
+        System.out.println("Alice booked Room 101.");
 
-        List<ConfirmedBooking> history = new ArrayList<>();
-        Set<Integer> allocatedRooms = new HashSet<>();
-
-        // 2. Processing with Error Handling
-        System.out.println("--- Starting Allocation Engine ---");
-
-        while (!bookingQueue.isEmpty()) {
-            ReservationRequest req = bookingQueue.poll();
-
-            try {
-                // FAIL-FAST VALIDATION
-                validateRequest(req, inventory, allocatedRooms);
-
-                // If validation passes, proceed to allocation
-                allocatedRooms.add(req.getRequestedRoomNumber());
-                history.add(new ConfirmedBooking(req.getGuestName(), req.getRequestedRoomNumber(), 0.0));
-                System.out.println("SUCCESS: Confirmed " + req.getGuestName());
-
-            } catch (InvalidBookingException e) {
-                // Graceful Failure Handling
-                System.err.println("VALIDATION ERROR: " + e.getMessage() + " [Guest: " + req.getGuestName() + "]");
-            }
+        // 3. Use Case 10: Cancellation & Rollback
+        System.out.println("\n--- Action: Cancellation (Use Case 10) ---");
+        try {
+            cancelBooking("Alice", activeBookings, inventory, rollbackStack);
+        } catch (InvalidOperationException e) {
+            System.err.println("Cancellation Failed: " + e.getMessage());
         }
 
-        // 3. Final Report
-        System.out.println("\n--- Final Operational History ---");
-        history.forEach(System.out::println);
+        // 4. Verification
+        System.out.println("\n--- Final System State ---");
+        System.out.println("Rollback Stack (Recently Released): " + rollbackStack);
+        inventory.forEach(System.out::println);
     }
 
     /**
-     * Use Case 9 Logic: Guarding the System State.
-     * Detects errors before any data structure mutation occurs.
+     * Use Case 10 Logic: Controlled State Reversal
      */
-    private static void validateRequest(ReservationRequest req, List<Room> inventory, Set<Integer> allocated) throws InvalidBookingException {
-        // Rule 1: Room must exist in inventory
-        boolean exists = inventory.stream().anyMatch(r -> r.getRoomNumber() == req.getRequestedRoomNumber());
-        if (!exists) {
-            throw new InvalidBookingException("Room " + req.getRequestedRoomNumber() + " does not exist in inventory.");
+    private static void cancelBooking(String guestName,
+                                      Map<String, ConfirmedBooking> activeBookings,
+                                      List<Room> inventory,
+                                      Stack<Integer> rollbackStack) throws InvalidOperationException {
+
+        // 1. Validate Existence
+        if (!activeBookings.containsKey(guestName)) {
+            throw new InvalidOperationException("No active booking found for guest: " + guestName);
         }
 
-        // Rule 2: Prevent Double Booking (Re-checking Set)
-        if (allocated.contains(req.getRequestedRoomNumber())) {
-            throw new InvalidBookingException("Room " + req.getRequestedRoomNumber() + " is already occupied.");
+        // 2. Retrieve Booking Data
+        ConfirmedBooking booking = activeBookings.remove(guestName);
+        int roomToRelease = booking.getRoomNumber();
+
+        // 3. Inventory Restoration (Increment/Set Available)
+        for (Room r : inventory) {
+            if (r.getRoomNumber() == roomToRelease) {
+                r.setAvailable(true);
+                break;
+            }
         }
+
+        // 4. Push to Rollback Structure (LIFO)
+        rollbackStack.push(roomToRelease);
+
+        System.out.println("SUCCESS: Inventory rolled back. Room " + roomToRelease + " is now free.");
     }
 }
