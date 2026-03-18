@@ -1,102 +1,83 @@
 import java.util.*;
+import java.io.*;
 
 /**
  * Project: Book My Stay
- * Use Case 11: Concurrent Booking Simulation (Thread Safety)
- * Goal: Use synchronization to prevent race conditions during simultaneous bookings.
- * * @version 1.1
+ * Use Case 12: Data Persistence & System Recovery
+ * Goal: Use Serialization to save/load system state to a file (data.ser).
+ * * @version 1.2
  */
 
-class Room {
+// --- Entity: Room (Must be Serializable) ---
+class Room implements Serializable {
+    private static final long serialVersionUID = 1L;
     private int roomNumber;
-    private boolean isAvailable = true;
+    private boolean isAvailable;
 
-    public Room(int roomNumber) { this.roomNumber = roomNumber; }
-    public int getRoomNumber() { return roomNumber; }
-    public boolean isAvailable() { return isAvailable; }
+    public Room(int roomNumber) {
+        this.roomNumber = roomNumber;
+        this.isAvailable = true;
+    }
     public void setAvailable(boolean available) { isAvailable = available; }
-}
-
-class BookingProcessor implements Runnable {
-    private String guestName;
-    private int requestedRoom;
-    private static List<Room> inventory;
-    private static Set<Integer> allocatedRooms = new HashSet<>();
-
-    public BookingProcessor(String name, int room, List<Room> inv) {
-        this.guestName = name;
-        this.requestedRoom = room;
-        inventory = inv;
-    }
-
     @Override
-    public void run() {
-        processBooking();
-    }
-
-    /**
-     * Use Case 11: The Critical Section
-     * The 'synchronized' keyword ensures only one thread enters this block at a time.
-     */
-    private void processBooking() {
-        System.out.println(guestName + " is attempting to book Room " + requestedRoom + "...");
-
-        synchronized (inventory) { // Locking the shared resource
-            boolean success = false;
-
-            // Check if already allocated (Race condition protection)
-            if (allocatedRooms.contains(requestedRoom)) {
-                System.err.println(">>> CONCURRENCY ALERT: " + guestName + " failed. Room " + requestedRoom + " already taken.");
-                return;
-            }
-
-            for (Room r : inventory) {
-                if (r.getRoomNumber() == requestedRoom && r.isAvailable()) {
-                    // Atomic-like update
-                    r.setAvailable(false);
-                    allocatedRooms.add(requestedRoom);
-                    success = true;
-                    break;
-                }
-            }
-
-            if (success) {
-                System.out.println(">>> SUCCESS: " + guestName + " secured Room " + requestedRoom);
-            } else {
-                System.out.println(">>> FAILED: Room " + requestedRoom + " is unavailable for " + guestName);
-            }
-        }
-    }
+    public String toString() { return "Room " + roomNumber + " [" + (isAvailable ? "Free" : "Sold") + "]"; }
 }
 
 public class BookMyStayApp {
-    public static void main(String[] args) throws InterruptedException {
-        System.out.println("=== BOOK MY STAY: CONCURRENT SIMULATION ===\n");
+    private static final String FILE_NAME = "hotel_state.ser";
+    private static List<Room> inventory = new ArrayList<>();
 
-        // 1. Setup Shared Inventory
-        List<Room> sharedInventory = Collections.synchronizedList(new ArrayList<>());
-        sharedInventory.add(new Room(101));
-        sharedInventory.add(new Room(102));
+    public static void main(String[] args) {
+        System.out.println("=== BOOK MY STAY: PERSISTENCE ENGINE ===\n");
 
-        // 2. Simulate Simultaneous Guests for the SAME Room (101)
-        // If thread safety fails, both might get the room!
-        Thread t1 = new Thread(new BookingProcessor("Alice", 101, sharedInventory));
-        Thread t2 = new Thread(new BookingProcessor("Bob", 101, sharedInventory));
-        Thread t3 = new Thread(new BookingProcessor("Charlie", 102, sharedInventory));
+        // 1. Attempt Recovery (Deserialization)
+        if (loadState()) {
+            System.out.println(">>> RECOVERY SUCCESSFUL: Previous state loaded.");
+        } else {
+            System.out.println(">>> NO PREVIOUS STATE FOUND: Initializing new inventory.");
+            inventory.add(new Room(101));
+            inventory.add(new Room(102));
+        }
 
-        // 3. Start Threads (Parallel Execution)
-        t1.start();
-        t2.start();
-        t3.start();
+        // 2. Display Current State
+        System.out.println("Current Inventory:");
+        inventory.forEach(System.out::println);
 
-        // Wait for all to finish
-        t1.join();
-        t2.join();
-        t3.join();
+        // 3. Simulate a change in state
+        System.out.println("\n--- Action: Booking Room 101 ---");
+        inventory.get(0).setAvailable(false);
 
-        System.out.println("\n--- Final System Audit ---");
-        for (Room r : sharedInventory) {
-            System.out.println("Room " + r.getRoomNumber() + " Status: " + (r.isAvailable() ? "Available" : "Occupied"));
+        // 4. Persist State before shutdown (Serialization)
+        saveState();
+        System.out.println("\n>>> SYSTEM SHUTDOWN: State persisted to " + FILE_NAME);
+        System.out.println("Run the app again to see Room 101 remain 'Sold'!");
+    }
+
+    /**
+     * Use Case 12: Serialization (Save to Disk)
+     */
+    private static void saveState() {
+        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(FILE_NAME))) {
+            oos.writeObject(inventory);
+        } catch (IOException e) {
+            System.err.println("Persistence Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Use Case 12: Deserialization (Load from Disk)
+     */
+    @SuppressWarnings("unchecked")
+    private static boolean loadState() {
+        File file = new File(FILE_NAME);
+        if (!file.exists()) return false;
+
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(FILE_NAME))) {
+            inventory = (List<Room>) ois.readObject();
+            return true;
+        } catch (IOException | ClassNotFoundException e) {
+            System.err.println("Recovery Error: " + e.getMessage());
+            return false;
         }
     }
 }
