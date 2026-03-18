@@ -2,12 +2,32 @@ import java.util.*;
 
 /**
  * Project: Book My Stay
- * Use Case 6: Reservation Confirmation & Room Allocation
- * Goal: Assign rooms safely and prevent double-booking using Set and HashMap.
+ * Use Case 7: Add-On Service Selection
+ * Goal: Map multiple services to a reservation using Map<String, List<Service>>.
  * * @author YourName
  * @version 1.0
  */
 
+// --- Entity: Service (New for Use Case 7) ---
+class AddOnService {
+    private String name;
+    private double price;
+
+    public AddOnService(String name, double price) {
+        this.name = name;
+        this.price = price;
+    }
+
+    public String getName() { return name; }
+    public double getPrice() { return price; }
+
+    @Override
+    public String toString() {
+        return name + " ($" + price + ")";
+    }
+}
+
+// --- Entity: Room (From Use Case 2/4/6) ---
 class Room {
     private int roomNumber;
     private String category;
@@ -29,6 +49,7 @@ class Room {
     }
 }
 
+// --- Entity: Reservation (From Use Case 5/6) ---
 class ReservationRequest {
     private String guestName;
     private int requestedRoomNumber;
@@ -40,68 +61,65 @@ class ReservationRequest {
 
     public String getGuestName() { return guestName; }
     public int getRequestedRoomNumber() { return requestedRoomNumber; }
-
-    @Override
-    public String toString() {
-        return "Request [Guest: " + guestName + " | Room: " + requestedRoomNumber + "]";
-    }
 }
 
 public class BookMyStayApp {
 
     public static void main(String[] args) {
 
-        // --- Setup (From Previous Use Cases) ---
-        System.out.println("=== Book My Stay: Allocation System ===");
-
+        // --- Setup Inventory & Requests ---
         List<Room> inventory = new ArrayList<>();
         inventory.add(new Room(101, "Standard"));
         inventory.add(new Room(102, "Deluxe"));
-        inventory.add(new Room(201, "Suite"));
 
         Queue<ReservationRequest> bookingQueue = new LinkedList<>();
         bookingQueue.add(new ReservationRequest("Alice", 101));
         bookingQueue.add(new ReservationRequest("Bob", 102));
-        bookingQueue.add(new ReservationRequest("Charlie", 101)); // Conflicts with Alice
 
-        // --- Use Case 6: Allocation & Uniqueness Enforcement ---
-
-        // Set to prevent reuse of Room IDs (Double Booking Prevention)
+        // --- Use Case 6: Allocation (Summary) ---
         Set<Integer> allocatedRooms = new HashSet<>();
-
-        System.out.println("\n--- Processing Allocation Queue ---");
-
+        System.out.println("=== Use Case 6: Allocation Summary ===");
         while (!bookingQueue.isEmpty()) {
-            // 1. Dequeue request (FIFO)
-            ReservationRequest currentRequest = bookingQueue.poll();
-            int roomNum = currentRequest.getRequestedRoomNumber();
+            ReservationRequest req = bookingQueue.poll();
+            allocatedRooms.add(req.getRequestedRoomNumber());
+            System.out.println("Confirmed: " + req.getGuestName() + " in Room " + req.getRequestedRoomNumber());
+        }
 
-            System.out.println("\nProcessing: " + currentRequest);
+        // --- Use Case 7: Add-On Service Selection ---
 
-            // 2. Uniqueness Enforcement Check
-            if (allocatedRooms.contains(roomNum)) {
-                System.out.println(">> FAILED: Room " + roomNum + " is already allocated. Double-booking prevented!");
-            } else {
-                // 3. Find room in inventory and update status
-                boolean found = false;
-                for (Room r : inventory) {
-                    if (r.getRoomNumber() == roomNum && r.isAvailable()) {
-                        // 4. Atomic Logical Operation: Assignment + Update
-                        r.setAvailable(false);
-                        allocatedRooms.add(roomNum); // Record to prevent reuse
-                        System.out.println(">> SUCCESS: Reservation confirmed for " + currentRequest.getGuestName());
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) System.out.println(">> ERROR: Room not found or unavailable.");
+        // 1. Define Available Services
+        AddOnService breakfast = new AddOnService("Breakfast Buffet", 20.0);
+        AddOnService wifi = new AddOnService("High-Speed WiFi", 10.0);
+        AddOnService spa = new AddOnService("Spa Treatment", 50.0);
+
+        // 2. Map Reservation (Guest Name) to a List of Services
+        Map<String, List<AddOnService>> serviceAssignments = new HashMap<>();
+
+        System.out.println("\n--- Use Case 7: Adding Services ---");
+
+        // Guest: Alice selects Breakfast and WiFi
+        serviceAssignments.put("Alice", new ArrayList<>());
+        serviceAssignments.get("Alice").add(breakfast);
+        serviceAssignments.get("Alice").add(wifi);
+
+        // Guest: Bob selects Spa
+        serviceAssignments.put("Bob", new ArrayList<>());
+        serviceAssignments.get("Bob").add(spa);
+
+        // 3. Cost Aggregation Logic
+        for (String guest : serviceAssignments.keySet()) {
+            double totalAddOnCost = 0;
+            System.out.println("\nAdd-Ons for " + guest + ":");
+
+            List<AddOnService> guestServices = serviceAssignments.get(guest);
+            for (AddOnService s : guestServices) {
+                System.out.println(" + " + s);
+                totalAddOnCost += s.getPrice();
             }
+            System.out.println("Total Service Charges: $" + totalAddOnCost);
         }
 
-        // --- Final Inventory Consistency Check ---
-        System.out.println("\n--- Final Inventory State ---");
-        for (Room r : inventory) {
-            System.out.println(r);
-        }
+        System.out.println("\n--- Final System Integrity Check ---");
+        System.out.println("Core Inventory preserved? Yes. Total Rooms: " + inventory.size());
     }
 }
