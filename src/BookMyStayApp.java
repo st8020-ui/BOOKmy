@@ -2,95 +2,101 @@ import java.util.*;
 
 /**
  * Project: Book My Stay
- * Use Case 10: Booking Cancellation & Inventory Rollback
- * Goal: Use a Stack (LIFO) to manage state reversal and restore inventory.
- * * @version 1.0
+ * Use Case 11: Concurrent Booking Simulation (Thread Safety)
+ * Goal: Use synchronization to prevent race conditions during simultaneous bookings.
+ * * @version 1.1
  */
-
-// --- CUSTOM EXCEPTION ---
-class InvalidOperationException extends Exception {
-    public InvalidOperationException(String message) { super(message); }
-}
-
-// --- ENTITIES ---
 
 class Room {
     private int roomNumber;
-    private boolean isAvailable;
-    public Room(int roomNumber) { this.roomNumber = roomNumber; this.isAvailable = true; }
+    private boolean isAvailable = true;
+
+    public Room(int roomNumber) { this.roomNumber = roomNumber; }
     public int getRoomNumber() { return roomNumber; }
     public boolean isAvailable() { return isAvailable; }
     public void setAvailable(boolean available) { isAvailable = available; }
-    @Override
-    public String toString() { return "Room " + roomNumber + " [Available: " + isAvailable + "]"; }
 }
 
-class ConfirmedBooking {
+class BookingProcessor implements Runnable {
     private String guestName;
-    private int roomNumber;
-    public ConfirmedBooking(String guestName, int roomNumber) { this.guestName = guestName; this.roomNumber = roomNumber; }
-    public String getGuestName() { return guestName; }
-    public int getRoomNumber() { return roomNumber; }
-}
+    private int requestedRoom;
+    private static List<Room> inventory;
+    private static Set<Integer> allocatedRooms = new HashSet<>();
 
-public class BookMyStayApp {
+    public BookingProcessor(String name, int room, List<Room> inv) {
+        this.guestName = name;
+        this.requestedRoom = room;
+        inventory = inv;
+    }
 
-    public static void main(String[] args) {
-        System.out.println("=== BOOK MY STAY: FULL LIFECYCLE (UC 10) ===\n");
-
-        // 1. Setup Environment
-        List<Room> inventory = new ArrayList<>(Arrays.asList(new Room(101), new Room(102)));
-        Map<String, ConfirmedBooking> activeBookings = new HashMap<>();
-        Stack<Integer> rollbackStack = new Stack<>(); // The LIFO Rollback Structure
-
-        // 2. Simulate a Booking (Alice takes Room 101)
-        System.out.println("--- Action: Booking ---");
-        activeBookings.put("Alice", new ConfirmedBooking("Alice", 101));
-        inventory.get(0).setAvailable(false);
-        System.out.println("Alice booked Room 101.");
-
-        // 3. Use Case 10: Cancellation & Rollback
-        System.out.println("\n--- Action: Cancellation (Use Case 10) ---");
-        try {
-            cancelBooking("Alice", activeBookings, inventory, rollbackStack);
-        } catch (InvalidOperationException e) {
-            System.err.println("Cancellation Failed: " + e.getMessage());
-        }
-
-        // 4. Verification
-        System.out.println("\n--- Final System State ---");
-        System.out.println("Rollback Stack (Recently Released): " + rollbackStack);
-        inventory.forEach(System.out::println);
+    @Override
+    public void run() {
+        processBooking();
     }
 
     /**
-     * Use Case 10 Logic: Controlled State Reversal
+     * Use Case 11: The Critical Section
+     * The 'synchronized' keyword ensures only one thread enters this block at a time.
      */
-    private static void cancelBooking(String guestName,
-                                      Map<String, ConfirmedBooking> activeBookings,
-                                      List<Room> inventory,
-                                      Stack<Integer> rollbackStack) throws InvalidOperationException {
+    private void processBooking() {
+        System.out.println(guestName + " is attempting to book Room " + requestedRoom + "...");
 
-        // 1. Validate Existence
-        if (!activeBookings.containsKey(guestName)) {
-            throw new InvalidOperationException("No active booking found for guest: " + guestName);
-        }
+        synchronized (inventory) { // Locking the shared resource
+            boolean success = false;
 
-        // 2. Retrieve Booking Data
-        ConfirmedBooking booking = activeBookings.remove(guestName);
-        int roomToRelease = booking.getRoomNumber();
+            // Check if already allocated (Race condition protection)
+            if (allocatedRooms.contains(requestedRoom)) {
+                System.err.println(">>> CONCURRENCY ALERT: " + guestName + " failed. Room " + requestedRoom + " already taken.");
+                return;
+            }
 
-        // 3. Inventory Restoration (Increment/Set Available)
-        for (Room r : inventory) {
-            if (r.getRoomNumber() == roomToRelease) {
-                r.setAvailable(true);
-                break;
+            for (Room r : inventory) {
+                if (r.getRoomNumber() == requestedRoom && r.isAvailable()) {
+                    // Atomic-like update
+                    r.setAvailable(false);
+                    allocatedRooms.add(requestedRoom);
+                    success = true;
+                    break;
+                }
+            }
+
+            if (success) {
+                System.out.println(">>> SUCCESS: " + guestName + " secured Room " + requestedRoom);
+            } else {
+                System.out.println(">>> FAILED: Room " + requestedRoom + " is unavailable for " + guestName);
             }
         }
+    }
+}
 
-        // 4. Push to Rollback Structure (LIFO)
-        rollbackStack.push(roomToRelease);
+public class BookMyStayApp {
+    public static void main(String[] args) throws InterruptedException {
+        System.out.println("=== BOOK MY STAY: CONCURRENT SIMULATION ===\n");
 
-        System.out.println("SUCCESS: Inventory rolled back. Room " + roomToRelease + " is now free.");
+        // 1. Setup Shared Inventory
+        List<Room> sharedInventory = Collections.synchronizedList(new ArrayList<>());
+        sharedInventory.add(new Room(101));
+        sharedInventory.add(new Room(102));
+
+        // 2. Simulate Simultaneous Guests for the SAME Room (101)
+        // If thread safety fails, both might get the room!
+        Thread t1 = new Thread(new BookingProcessor("Alice", 101, sharedInventory));
+        Thread t2 = new Thread(new BookingProcessor("Bob", 101, sharedInventory));
+        Thread t3 = new Thread(new BookingProcessor("Charlie", 102, sharedInventory));
+
+        // 3. Start Threads (Parallel Execution)
+        t1.start();
+        t2.start();
+        t3.start();
+
+        // Wait for all to finish
+        t1.join();
+        t2.join();
+        t3.join();
+
+        System.out.println("\n--- Final System Audit ---");
+        for (Room r : sharedInventory) {
+            System.out.println("Room " + r.getRoomNumber() + " Status: " + (r.isAvailable() ? "Available" : "Occupied"));
+        }
     }
 }
