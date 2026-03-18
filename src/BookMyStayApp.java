@@ -1,18 +1,13 @@
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Queue;
+import java.util.*;
 
 /**
  * Project: Book My Stay
- * Use Case 5: Booking Request (First-Come-First-Served)
- * * This class serves as the entry point to demonstrate fair request handling
- * using the FIFO principle via a Queue data structure.
+ * Use Case 6: Reservation Confirmation & Room Allocation
+ * Goal: Assign rooms safely and prevent double-booking using Set and HashMap.
  * * @author YourName
  * @version 1.0
  */
 
-// --- Entity: Room (From Use Case 2/4) ---
 class Room {
     private int roomNumber;
     private String category;
@@ -24,13 +19,16 @@ class Room {
         this.isAvailable = true;
     }
 
+    public int getRoomNumber() { return roomNumber; }
+    public boolean isAvailable() { return isAvailable; }
+    public void setAvailable(boolean available) { isAvailable = available; }
+
     @Override
     public String toString() {
         return "Room [" + roomNumber + " | " + category + " | Available: " + isAvailable + "]";
     }
 }
 
-// --- Entity: Reservation (From Use Case 5) ---
 class ReservationRequest {
     private String guestName;
     private int requestedRoomNumber;
@@ -40,6 +38,9 @@ class ReservationRequest {
         this.requestedRoomNumber = requestedRoomNumber;
     }
 
+    public String getGuestName() { return guestName; }
+    public int getRequestedRoomNumber() { return requestedRoomNumber; }
+
     @Override
     public String toString() {
         return "Request [Guest: " + guestName + " | Room: " + requestedRoomNumber + "]";
@@ -48,52 +49,59 @@ class ReservationRequest {
 
 public class BookMyStayApp {
 
-    /**
-     * Main method to execute the application flow.
-     * 1. Initialize Inventory
-     * 2. Accept Booking Requests into a Queue
-     */
     public static void main(String[] args) {
 
-        // --- Use Case 1: Welcome Message ---
-        System.out.println("=================================");
-        System.out.println(" Welcome to Book My Stay ");
-        System.out.println(" Hotel Booking System v1.0 ");
-        System.out.println("=================================");
+        // --- Setup (From Previous Use Cases) ---
+        System.out.println("=== Book My Stay: Allocation System ===");
 
-        // --- Use Case 2: Room Inventory Initialization ---
-        // Using ArrayList to maintain real-time inventory consistency
         List<Room> inventory = new ArrayList<>();
         inventory.add(new Room(101, "Standard"));
         inventory.add(new Room(102, "Deluxe"));
         inventory.add(new Room(201, "Suite"));
 
-        System.out.println("\n--- Current Room Inventory ---");
+        Queue<ReservationRequest> bookingQueue = new LinkedList<>();
+        bookingQueue.add(new ReservationRequest("Alice", 101));
+        bookingQueue.add(new ReservationRequest("Bob", 102));
+        bookingQueue.add(new ReservationRequest("Charlie", 101)); // Conflicts with Alice
+
+        // --- Use Case 6: Allocation & Uniqueness Enforcement ---
+
+        // Set to prevent reuse of Room IDs (Double Booking Prevention)
+        Set<Integer> allocatedRooms = new HashSet<>();
+
+        System.out.println("\n--- Processing Allocation Queue ---");
+
+        while (!bookingQueue.isEmpty()) {
+            // 1. Dequeue request (FIFO)
+            ReservationRequest currentRequest = bookingQueue.poll();
+            int roomNum = currentRequest.getRequestedRoomNumber();
+
+            System.out.println("\nProcessing: " + currentRequest);
+
+            // 2. Uniqueness Enforcement Check
+            if (allocatedRooms.contains(roomNum)) {
+                System.out.println(">> FAILED: Room " + roomNum + " is already allocated. Double-booking prevented!");
+            } else {
+                // 3. Find room in inventory and update status
+                boolean found = false;
+                for (Room r : inventory) {
+                    if (r.getRoomNumber() == roomNum && r.isAvailable()) {
+                        // 4. Atomic Logical Operation: Assignment + Update
+                        r.setAvailable(false);
+                        allocatedRooms.add(roomNum); // Record to prevent reuse
+                        System.out.println(">> SUCCESS: Reservation confirmed for " + currentRequest.getGuestName());
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) System.out.println(">> ERROR: Room not found or unavailable.");
+            }
+        }
+
+        // --- Final Inventory Consistency Check ---
+        System.out.println("\n--- Final Inventory State ---");
         for (Room r : inventory) {
             System.out.println(r);
         }
-
-        // --- Use Case 5: Booking Request (FCFS) ---
-        // Decoupling intake from allocation using a Queue (FIFO)
-        Queue<ReservationRequest> bookingQueue = new LinkedList<>();
-
-        System.out.println("\n--- Receiving Booking Requests ---");
-
-        // Adding requests in arrival order (Alice -> Bob -> Charlie)
-        bookingQueue.add(new ReservationRequest("Alice", 101));
-        bookingQueue.add(new ReservationRequest("Bob", 102));
-        bookingQueue.add(new ReservationRequest("Charlie", 101));
-
-        // Displaying the queue to verify FIFO order
-        System.out.println("Current Request Queue (Arrival Order):");
-        for (ReservationRequest req : bookingQueue) {
-            System.out.println(" >> " + req);
-        }
-
-        // Final Verification
-        System.out.println("\nTotal Queued Requests: " + bookingQueue.size());
-        System.out.println("Next Request to Process: " + bookingQueue.peek());
-
-        System.out.println("\nApplication Terminated Successfully.");
     }
 }
